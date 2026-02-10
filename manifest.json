@@ -1,0 +1,18 @@
+{
+  "name": "QuitScroll — Social Media Liberation",
+  "short_name": "QuitScroll",
+  "description": "A 6-day multi-method program to break free from social media addiction. Integrating CBT, ACT, DBT, neuroscience & more with voice narration.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06060C",
+  "theme_color": "#E8443A",
+  "orientation": "portrait",
+  "categories": ["health", "lifestyle", "wellness"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [],
+  "lang": "en",
+  "dir": "ltr"
+}

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#06060C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="QuitScroll">
+  <meta name="description" content="A 6-day multi-method program to break free from social media addiction. CBT, ACT, DBT, neuroscience & voice narration.">
+  
+  <title>QuitScroll — Social Media Liberation Program</title>
+  
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body, #root { width: 100%; min-height: 100vh; min-height: 100dvh; }
+    body { 
+      background: #06060C; 
+      overscroll-behavior: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    /* Safe area padding for notched phones */
+    @supports (padding: env(safe-area-inset-top)) {
+      body { 
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+      }
+    }
+    /* PWA install banner hide */
+    @media (display-mode: standalone) {
+      body { padding-top: 0; }
+    }
+    /* Smooth scrolling */
+    html { scroll-behavior: smooth; }
+    /* Selection color */
+    ::selection { background: #E8443A40; color: #F8FAFC; }
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 4px; }
+    /* Prevent pull-to-refresh on mobile */
+    body { overscroll-behavior-y: contain; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel" data-type="module">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ═══════════ TTS ENGINE ═══════════ */
+const useTTS = () => {
+  const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [voices, setVoices] = useState([]);
+  const [voice, setVoice] = useState(null);
+  const [rate, setRate] = useState(0.92);
+  const [prog, setProg] = useState(0);
+  const cancel = useRef(false);
+  const total = useRef(0);
+
+  useEffect(() => {
+    const s = "speechSynthesis" in window;
+    setOk(s);
+    if (!s) return;
+    const load = () => {
+      const v = speechSynthesis.getVoices();
+      if (v.length) {
+        setVoices(v);
+        setVoice(
+          v.find((x) => x.lang.startsWith("en") && /female|samantha|zira|karen/i.test(x.name)) ||
+          v.find((x) => x.lang.startsWith("en-")) || v[0]
+        );
+      }
+    };
+    load();
+    speechSynthesis.onvoiceschanged = load;
+    return () => speechSynthesis.cancel();
+  }, []);
+
+  const speak = useCallback((text) => {
+    if (!ok) return;
+    speechSynthesis.cancel();
+    cancel.current = false;
+    total.current = text.length;
+    const sents = text.match(/[^.!?]+[.!?]+\s*/g) || [text];
+    let i = 0, done = 0;
+    const next = () => {
+      if (cancel.current || i >= sents.length) {
+        setSpeaking(false); setPaused(false);
+        if (!cancel.current) setProg(100);
+        return;
+      }
+      const chunk = sents.slice(i, i + 3).join(" ");
+      i += 3; done += chunk.length;
+      const u = new SpeechSynthesisUtterance(chunk);
+      if (voice) u.voice = voice;
+      u.rate = rate; u.pitch = 1;
+      u.onend = () => { setProg(Math.round((done / total.current) * 100)); next(); };
+      u.onerror = () => { setSpeaking(false); setPaused(false); };
+      speechSynthesis.speak(u);
+    };
+    setSpeaking(true); setPaused(false); setProg(0); next();
+  }, [ok, voice, rate]);
+
+  return {
+    speak, prog, speaking, paused, ok, voices, voice, setVoice, rate, setRate,
+    pause: useCallback(() => { if (ok) { speechSynthesis.pause(); setPaused(true); } }, [ok]),
+    resume: useCallback(() => { if (ok) { speechSynthesis.resume(); setPaused(false); } }, [ok]),
+    stop: useCallback(() => { if (ok) { cancel.current = true; speechSynthesis.cancel(); setSpeaking(false); setPaused(false); setProg(0); } }, [ok]),
+  };
+};
+
+/* ═══════════ CONTENT ═══════════ */
+const D = [
+{
+  day: 1, title: "Seeing the Invisible Prison", sub: "Understanding what happens when you scroll",
+  method: "Dopamine Neuroscience + CBT", tag: "NEUROSCIENCE + CBT", color: "#E8443A", icon: "🧠", dur: "~15 min",
+  sections: [
+    { t: "Welcome — Why This Program Is Different", type: "intro", body: "Welcome to QuitScroll. I want to be honest from the start. This is not another app that tells you to just put your phone down. You have tried that. It did not work. There is a scientific reason.\n\nOver the next six days, we will fundamentally change how your brain relates to social media. Not through willpower. Through understanding. The core principle: You do not need to fight the urge to scroll. You need to dissolve it by truly seeing what social media is, what it does to your brain, and what it gives versus takes.\n\nImagine you have been drinking from a well every day for years. The water tastes off, but everyone drinks from it. Then someone shows you the well is contaminated — not with something that kills immediately, but with something that slowly drains your energy, focus, confidence, and peace. Once you see the contamination, you do not need willpower to stop drinking. You just stop. We are not building your willpower. We are cleaning your glasses.\n\nThis program integrates eight evidence-based methods: Cognitive Behavioral Therapy to identify thought distortions. Acceptance and Commitment Therapy to observe urges without obeying them. Dialectical Behavior Therapy to build distress tolerance. Motivational Interviewing to explore ambivalence. Mindfulness-Based Cognitive Therapy. Behavioral Activation to fill the void with real rewards. Dopamine Neuroscience to explain the hijacking. And Habit Reversal Training to replace the scroll reflex.\n\nPlease do not skim. Let each insight settle. The people who benefit most engage deeply." },
+    { t: "The Dopamine Loop — Your Brain Under Siege", type: "science", body: "Your brain has a chemical called dopamine. Most think it is the pleasure chemical. It is not. Dopamine is the anticipation chemical, the wanting chemical. It does not make you feel good when you get something. It makes you want to keep seeking.\n\nWhen you open Instagram or TikTok, your brain releases dopamine not because content is amazing, but anticipating something amazing might come next. Every swipe is your brain saying maybe the next one. This is exactly the slot machine mechanism, called variable ratio reinforcement — the most powerful method for creating compulsive behavior ever discovered in behavioral science.\n\nResearchers in the 1950s found that when rewards come at unpredictable intervals, animals press levers thousands of times, neglecting food and sleep. The unpredictability itself is the addiction engine.\n\nThe engineers at social media companies know this and optimized for it. The infinite scroll has no stopping point. Notifications are algorithmically timed. Pull-to-refresh mimics a slot lever. Even loading delays are sometimes intentional — micro-moments of anticipation. You are not weak. You are a normal human whose brain is being exploited by a system designed by thousands of engineers to be maximally addictive.\n\nHere is the critical piece: heavy use causes dopamine receptor downregulation. Your brain becomes less sensitive to reward, needing more stimulation for the same satisfaction. Everything else — books, walks, conversations, your own thoughts — starts to feel flat. Not because life got boring. Because social media recalibrated your brain. You are not bored with your life. Social media made your brain incapable of appreciating what was always there." },
+    { t: "CBT Framework — Your Hidden Thought Traps", type: "method", body: "Cognitive Behavioral Therapy identifies the thought distortions keeping you trapped. Here are five. Notice which feel familiar.\n\nDistortion One: I am just relaxing. After scrolling, did you feel rested or drained, anxious, guilty? Scrolling is hyperstimulation masquerading as leisure. True rest replenishes. Social media depletes.\n\nDistortion Two: I need it to stay connected. Fewer than 15 percent of your feed comes from people you know. The connection is parasocial — a one-directional illusion. Real relationships atrophy because your social need is filled with junk food.\n\nDistortion Three: I need it to stay informed. How much of last week can you recall? Information from scrolling has extremely low retention. You are more overwhelmed, less informed.\n\nDistortion Four: Everyone uses it, I will miss out. FOMO is manufactured by the product. People without social media do not experience FOMO about social media. The product creates the fear it claims to solve.\n\nDistortion Five: I can stop anytime. Delete every app for 48 hours right now. If that creates anxiety, you are compelled, not choosing.\n\nCBT teaches examining these against real evidence. They dissolve because they were never true. They were stories your addicted brain told to keep you in the loop." },
+    { t: "Today's Exercises — Making This Real", type: "exercise", body: "Exercise One — The Mindful Scroll: Open your most-used app for 10 minutes. Observe like a scientist. Notice body tension: shoulders, jaw, breathing. Label each post's emotion: envy, boredom, comparison, numbness, amusement. After 10 minutes, sit in silence for 60 seconds. Rate the urge to pick the phone back up, one to ten.\n\nExercise Two — The Time Audit: Check screen time settings. Daily hours times 365 divided by 24 equals full days per year. The average is 38 days per year spent scrolling. What could you build with 38 extra days?\n\nExercise Three — Cognitive Distortion Log: Every time you reach for social media today, pause 5 seconds and note: What was I feeling before the urge? What justification appeared? Is it actually true based on my real experience?" },
+  ],
+  journal: "Complete the Mindful Scroll. Record physical sensations, emotion counts, Time Audit number, and which distortion resonated most.",
+  takeaway: "Social media exploits your dopamine system using slot machine mechanics. You are not weak — you are being exploited. Seeing it clearly is the first step to freedom.",
+},
+{
+  day: 2, title: "The Comparison Machine", sub: "How your self-worth is being quietly dismantled",
+  method: "CBT Cognitive Restructuring + Motivational Interviewing", tag: "CBT + MI", color: "#D97706", icon: "🪞", dur: "~14 min",
+  sections: [
+    { t: "The Invisible Tax on Your Self-Worth", type: "insight", body: "Every time you scroll, your subconscious runs a comparison algorithm. You see vacations, bodies, careers, relationships — and your brain calculates a deficit. This fires in milliseconds, beneath awareness, and it is devastating.\n\nFor most of human history, you compared yourself to maybe 30 people and had full context. You knew your neighbor who seemed wealthy also had health problems. The comparison had nuance.\n\nNow you compare your complete, unedited reality to thousands of carefully curated highlight reels daily. That influencer's casual photo took 14 takes with professional lighting. That couple's anniversary post hides last night's argument. That entrepreneur's success post omits the debt.\n\nResearchers at the University of Pennsylvania found that limiting social media to 30 minutes daily significantly reduced loneliness and depression within three weeks. Not because of extra free time — because the comparison cycle stopped eroding self-worth. Three weeks. Not years of therapy. Just reducing exposure to a machine designed to make you feel inadequate." },
+    { t: "Motivational Interviewing — Honest Ambivalence", type: "method", body: "Most people wanting to change are simultaneously motivated and resistant. They want to quit and do not want to quit. Instead of suppressing this ambivalence, let us explore it honestly.\n\nThe case FOR social media: entertainment when bored, specific communities, keeping tabs on acquaintances, news source, creative sharing. I will not dismiss these.\n\nThe case AGAINST: hours of life consumed, degraded attention span, eroded self-image, increased anxiety, disrupted sleep, diminished presence with loved ones, reduced capacity to enjoy quiet moments.\n\nThe key MI question: On balance, is my current relationship with social media the life I actually want? And critically — is there anything social media gives me that I genuinely cannot get through healthier means? A phone call for connection. A book for entertainment. A newsletter for news. The honest answer, for most people, is no.\n\nMI does not force a conclusion. It resolves ambivalence through honest self-inquiry. When you drop the rationalizations and ask what your real experience tells you, the answer becomes clear." },
+    { t: "Today's Exercises", type: "exercise", body: "Exercise One — Comparison Audit: Scroll for 5 minutes, labeling each post's gut emotion. Count what percentage triggered negative feelings. Most discover 60 to 80 percent negative.\n\nExercise Two — CBT Thought Record: Four columns. Situation (what triggered the urge). Automatic Thought (the justification). Evidence Test (is it actually true?). Reframe (a more accurate version). Fill at least 3 rows today.\n\nExercise Three — Values Inventory: List your top 5 values. For each, rate how social media helps versus hinders that value, on a scale of negative 5 to positive 5. Be specific about why." },
+  ],
+  journal: "Complete Comparison Audit with percentages. Fill at least 3 Thought Record rows. Rate your top values. Which value is most harmed by social media?",
+  takeaway: "You are comparing your unfiltered reality to thousands of curated fictions every day. The quiet erosion of self-worth is not personal failure — it is a predictable neurological response to an environment that did not exist fifteen years ago.",
+},
+{
+  day: 3, title: "Learning to Sit With Discomfort", sub: "The skill that changes everything",
+  method: "ACT + DBT Distress Tolerance", tag: "ACT + DBT", color: "#059669", icon: "🌊", dur: "~15 min",
+  sections: [
+    { t: "Why You Actually Reach for Your Phone", type: "insight", body: "Social media is not your problem. It is your solution to a problem. Every time you reach for your phone, you are escaping something uncomfortable — boredom, anxiety, loneliness, your own thoughts. ACT calls this experiential avoidance.\n\nHere is the paradox: the more you avoid discomfort, the more powerful it becomes. Every time you scroll to escape boredom, you train your brain that boredom is unbearable. You are systematically weakening your capacity to tolerate normal human discomfort.\n\nImagine you are driving a bus. This bus is your life — where you are heading, what you value. On the bus are passengers: your thoughts, urges, emotions. Some shout demands. The urge to scroll screams: Check your phone! Most people either stop the bus to fight these passengers, or hand them the steering wheel. ACT teaches a third way: hear the passengers, acknowledge them, and keep driving toward your values. The urge stays on the bus. But you are the one driving.\n\nHere is a technique you can use immediately. When the urge arises, instead of experiencing it as 'I need to check my phone,' rephrase it: 'I notice I am having the thought that I need to check my phone.' That shift moves you from inside the urge to beside it, observing. That tiny space between stimulus and response is where your freedom lives." },
+    { t: "DBT Distress Tolerance — Your Emergency Toolkit", type: "method", body: "DBT teaches Radical Acceptance: acknowledging reality exactly as it is without fighting it. When you feel the urge: 'Right now I feel restless. This is real. I do not need to make it go away. I can feel this and still choose differently.'\n\nThe TIPP technique for overwhelming moments:\n\nTemperature — Splash cold water on your face. This activates the mammalian dive reflex, dropping your heart rate and calming your system within seconds.\n\nIntense Exercise — Five minutes of vigorous movement. Jumping jacks, pushups, running in place. This metabolizes the stress hormones fueling the urge.\n\nPaced Breathing — In for 4 counts. Hold for 7. Out for 8. Three cycles. The longer exhale activates the parasympathetic system. This literally changes your blood chemistry within 90 seconds.\n\nProgressive Relaxation — Tense each muscle group for 5 seconds then release, moving from feet to forehead. The contrast teaches your body what true relaxation feels like.\n\nResearch shows urges peak and subside within 60 to 90 seconds. If you can ride those 90 seconds, the urge passes on its own. Every time you do, the freedom pathway strengthens." },
+    { t: "Urge Surfing — Your Core Practice", type: "exercise", body: "Next time you feel the pull toward your phone:\n\nStep 1 — Pause. Say to yourself: 'I am noticing an urge right now.' Not 'I need my phone.' Just: 'An urge is present.'\n\nStep 2 — Locate it. Where in your body? Restless hands? Tight chest? Hollow throat? Gnawing stomach?\n\nStep 3 — Describe it. Hot or cool? Tight or diffuse? Pulsing or constant? Give it a shape and color.\n\nStep 4 — Watch it change. Do nothing. Breathe normally. Like a wave, it rises, crests, and falls. You do not stop the wave. You surf it.\n\nStep 5 — Reflect. You survived. Nothing bad happened. That is freedom.\n\nPractice at least 3 times today. Also try Leaves on a Stream: sit comfortably, close eyes, imagine a gentle stream. Every thought that arises, place it on a leaf and watch it float away. Do not push, analyze, or argue. Just place and watch. Five minutes." },
+  ],
+  journal: "Practice Urge Surfing 3 times. For each: trigger, body location, peak intensity 1-10, duration, how you felt after. Also describe the Leaves on a Stream experience.",
+  takeaway: "The urge to scroll is a wave you can surf. It rises, peaks, and falls within 90 seconds. Every time you ride it out, you build the muscle of freedom. The phone was never the problem — it was your escape from the discomfort of being present.",
+},
+{
+  day: 4, title: "Reclaiming Your Attention", sub: "What was stolen and how to get it back",
+  method: "Behavioral Activation + Habit Reversal Training", tag: "BEHAVIORAL ACTIVATION + HRT", color: "#7C3AED", icon: "🎯", dur: "~13 min",
+  sections: [
+    { t: "The Attention Crisis", type: "insight", body: "Your attention is more precious than money — money can be earned back. In the attention economy, your focus is the product being sold to advertisers.\n\nEvery content switch while scrolling, which happens every 2 to 8 seconds, triggers an attentional switch with cognitive cost. Deep focus takes 15 to 25 minutes to achieve. If you check your phone 96 times daily, the current average, you may never reach deep focus at all.\n\nWhat has been stolen is flow — that complete absorption where time dissolves and you operate at peak ability. Psychologist Csikszentmihalyi spent 40 years studying flow and identified it as perhaps the deepest source of human fulfillment. Flow requires sustained, unbroken attention. Social media makes sustained attention impossible.\n\nOver time, your attention capacity atrophies like an unused muscle. This is why you cannot read for 20 minutes, sit through a film, or meditate for 5 minutes without reaching for stimulation. Not because these activities are boring — because your brain has been recalibrated to need constant novelty." },
+    { t: "Behavioral Activation + Habit Reversal", type: "method", body: "Most programs focus on removal without addressing replacement. Delete apps without alternatives and the void fills with reinstallation within a week.\n\nBehavioral Activation principle: you do not wait for motivation. You act, and motivation follows. The first few times you read instead of scroll will feel harder. That is your downregulated dopamine system complaining. Within 10 to 15 minutes, a deeper satisfaction emerges.\n\nCreate a Replacement Menu:\n\nFor 2-minute relief: step outside, breathe deeply, stretch, text someone a genuine compliment, write one journal sentence.\n\nFor 15-minute engagement: read a chapter, listen to music with eyes closed, walk around the block noticing details, do a puzzle.\n\nFor 30+ minutes of depth: cook from scratch, work on a creative project, call someone you care about, exercise, write.\n\nFor connection: voice notes, real emails, planned meetups, FaceTime.\n\nHabit Reversal Training adds three steps: Awareness of the trigger (you have been building this). Competing Response — a behavior physically incompatible with scrolling, performed immediately when the urge hits. Pick up a book, do pushups, call someone. Social Support — tell someone what you are doing. Witnessed commitments are dramatically more likely to be maintained." },
+    { t: "The 30-Minute Deep Focus Challenge", type: "exercise", body: "Exercise One: Write your Replacement Menu on paper. Put it somewhere visible — fridge, desk, taped to your phone case.\n\nExercise Two — The Challenge: Choose one offline activity. Put your phone in another room entirely. Set a timer for 30 minutes. Engage fully.\n\nPay attention to the arc. Minutes 1 through 7 will feel restless, uncomfortable. Your brain expects stimulation. Push through. Around minute 10, something shifts. By minute 25, many people describe a calm satisfaction they have not felt in months. That feeling is your natural reward system coming back online.\n\nExercise Three: Identify your 3 strongest scroll triggers — the situations that most reliably lead you to reach for your phone. For each, write a specific competing response. Make it concrete: 'When I lie in bed wanting to scroll, I will get up immediately and stretch for 2 minutes.'" },
+  ],
+  journal: "Share your Replacement Menu. Describe the 30-minute challenge: activity, how minute 5 felt versus minute 25. List 3 triggers with competing responses.",
+  takeaway: "Social media destroyed your capacity for deep focus — the foundation of flow, creativity, and genuine fulfillment. Your brain can recover, but only if you actively replace scrolling with real engagement.",
+},
+{
+  day: 5, title: "Becoming Someone New", sub: "The identity shift that makes freedom effortless",
+  method: "ACT Values + Identity-Based Change", tag: "ACT VALUES + IDENTITY", color: "#2563EB", icon: "🦋", dur: "~14 min",
+  sections: [
+    { t: "Why Identity Beats Willpower", type: "insight", body: "Today is the keystone of the entire program. Everything has been building to this.\n\nThe most effective behavior change is not behavior change at all. It is identity change. Most people think: 'I am a social media user trying to use it less.' That framing guarantees failure — every moment without scrolling feels like deprivation. You are resisting who you are, and willpower depletes.\n\nThe alternative is an identity shift. Not 'I am trying to quit social media.' Instead: 'I am someone who does not need social media.' Not trying. Not cutting back. I am someone who chooses presence. Who protects attention. Who seeks depth.\n\nThis is not a semantic trick. When identity shifts, behavior follows without effort. A vegetarian does not agonize about meat at every meal. A non-smoker does not wrestle with temptation at every party. When you truly become someone who does not need social media, the apps lose their pull. Not because you fight harder. Because the fight is over.\n\nYou have done this before. Every major life transition involved an identity update — student to professional, single to partner. The shift happened and behavior followed naturally." },
+    { t: "Deep Values Work", type: "method", body: "ACT defines values not as goals but as directions. 'Delete Instagram' is a goal. 'Be fully present in my own life' is a value. Goals are achieved and checked off. Values are directions you orient toward continuously.\n\nClose your eyes. Imagine you are very old, looking back at your entire life. The people you love most are gathered, speaking about the kind of person you were. Not your accomplishments — your character. Were you present? Attentive? Creative? Brave? Did you listen deeply? Did you pursue what genuinely mattered? Did you spend your one irreplaceable life staring at a small screen, or did you truly live?\n\nWhatever arose in you just now — that is your compass.\n\nThe Tombstone Exercise: Your tombstone has three lines. Your name. Your years. And one sentence summarizing your life. What do you want it to say? No one wants 'Had 10K followers and never missed a trending topic.' But without conscious choice, that is the direction many lives drift.\n\nWrite your sentence. Let it guide everything." },
+    { t: "Your Identity Statement", type: "exercise", body: "Exercise One — Write your Identity Statement. A full paragraph describing who you are as someone free from social media dependence. Present tense. Not 'I want to be' but 'I am.'\n\nExample: 'I am someone who is fully present in my own life. I protect my attention because it is the most valuable thing I own. I connect through real conversations, not likes and comments. I create more than I consume. I find richness in silence and space in my thoughts. I do not need an algorithm to tell me what to think about.'\n\nWrite yours. Read it aloud. Feel it. Read it every morning.\n\nExercise Two — For your top 3 values, write one concrete, scheduled action this week that embodies that value. If you value creativity, what will you create? If you value connection, who will you reach out to?\n\nExercise Three — Tell at least one person. Not dramatically. Simply: 'I am making a change in how I relate to technology.' This transforms private intention into witnessed social reality." },
+  ],
+  journal: "Write your full Identity Statement in present tense. Write your tombstone sentence. List 3 value-aligned actions for this week. Who will you tell?",
+  takeaway: "The most powerful change is identity-based. You are not a social media user trying to cut back. You are someone who does not need it. When identity shifts, behavior follows like water follows gravity.",
+},
+{
+  day: 6, title: "Your Liberation Day", sub: "The ceremony of choosing your real life",
+  method: "Full Integration + Relapse Prevention", tag: "ALL METHODS INTEGRATED", color: "#DC2626", icon: "🔥", dur: "~12 min",
+  sections: [
+    { t: "What You Have Become", type: "recap", body: "This is Day Six. Take a moment to appreciate what you have done.\n\nDay One, you learned the neuroscience — dopamine hijacking, variable-ratio reinforcement, downregulation. Day Two, you confronted the comparison machine and used Motivational Interviewing to honestly weigh what social media gives versus takes. Day Three, through ACT and DBT, you learned to surf urges and sit with discomfort. Day Four, you reclaimed your attention through Behavioral Activation and experienced your brain without the hijacking. Day Five, you made the deepest shift — from behavior change to identity change.\n\nYou are fundamentally different from the person who began this program. Not because you learned tricks. Because you learned truth. And truth, once seen, cannot be unseen." },
+    { t: "The Liberation Ceremony", type: "ceremony", body: "Step One: Open each social media app one final time. See the feed with your new eyes. See the comparison triggers. The outrage bait. The infinite scroll with no endpoint. The notification badges designed to create anxiety. You are observing from outside the system now.\n\nStep Two: Screenshot your screen time data. This is your 'before.' Save it.\n\nStep Three: Log out of every account. If you are ready, delete the apps. Do it calmly — like releasing something you have outgrown.\n\nStep Four: Read your Identity Statement aloud with full conviction.\n\nStep Five: Read this Final Script aloud:\n\n'I am choosing my real life. Not the curated version. Not the filtered version. The real, messy, beautiful, sometimes boring, entirely mine version. I do not need an algorithm to tell me what to care about. I do not need likes to know I matter. I have real people, real moments, real sunsets I see with my own eyes. I am not giving anything up. I am gaining everything back. My time. My attention. My peace. My ability to be bored and discover creativity inside that boredom. My ability to be still and find myself inside that stillness. I am free. Not because I fought and won. Because I finally saw clearly.'" },
+    { t: "Relapse Prevention — Staying Free", type: "method", body: "The 90-Second Rule: Every urge peaks and passes within 90 seconds. Use TIPP if needed. Just ride it.\n\nDefusion Phrase: 'I notice I am having the thought that I need to check social media. That is an old pathway firing. It is not a command.'\n\nValues Check: 'Would acting on this urge move me toward or away from who I want to be?'\n\nEnvironmental Design: Phone out of bedroom. Replacement Menu visible. Home screen social media slots replaced.\n\nThe Slip Protocol: If you reinstall or have a long scroll session, that is data, not failure. Ask: What happened before? What feeling was I escaping? Forgive completely. Move forward.\n\nMonthly Audit: Check attention, mood, relationships, productivity. Compare to where you were.\n\nPatience: Your dopamine system needs 2 to 4 weeks to recalibrate. The first week may feel flat — that is your reward system resetting, not your life being boring. Within weeks, colors brighten, books absorb you, conversations feel richer, your own thoughts become genuinely interesting.\n\nThat is not poetry. It is neuroscience. Your brain is healing.\n\nYou are free. Stay free. Go live your real life. It has been waiting for you." },
+  ],
+  journal: "Complete the ceremony. After reading the Final Script aloud, write: How do you feel? What are you most looking forward to? Write a letter to yourself to read in 30 days.",
+  takeaway: "You are free. Not because you fought a battle of willpower, but because you saw truth clearly and chose your real life. Go live it.",
+},
+];
+
+const URGE = [
+  "This urge will pass in 90 seconds. You are watching a neural pathway fire — nothing more. It is not a command. It is an echo.",
+  "What are you actually feeling right now? Go deeper than 'I want to scroll.' Bored? Anxious? Lonely? Name the real feeling underneath.",
+  "Social media does not solve boredom or loneliness. It numbs them briefly and makes them worse. You are avoiding a trap, not relief.",
+  "Breathe. In for 4. Hold for 7. Out for 8. Three times. Your nervous system is shifting right now.",
+  "Would acting on this urge move you toward or away from who you want to be? You wrote your Identity Statement. This urge is from the old version.",
+  "Place this urge on a leaf. Imagine a stream. Watch it float away. Do not push. Just watch. It fades. You remain.",
+  "Think about tomorrow morning. Clear, calm, no groggy guilt. That peace is worth 90 seconds of discomfort.",
+  "You have survived every urge you have ever had. This one is no different. It rises, peaks, and falls. You are the ocean.",
+];
+
+/* ═══════════ UI COMPONENTS ═══════════ */
+const FONT = "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300..700&family=DM+Mono:wght@300;400&display=swap";
+const PF = "'Playfair Display',serif";
+const DF = "'DM Sans',sans-serif";
+
+const VoicePanel = ({ tts }) => {
+  const [open, setOpen] = useState(false);
+  if (!tts.ok) return null;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1E293B", borderRadius: 10, padding: "8px 14px", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
+        🎙️ Voice Settings {open ? "▴" : "▾"}
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, background: "#0F1629", border: "1px solid #1E293B", borderRadius: 12, padding: 14 }}>
+          <label style={{ color: "#64748B", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>Voice</label>
+          <select value={tts.voice?.name || ""} onChange={(e) => { const v = tts.voices.find((x) => x.name === e.target.value); if (v) tts.setVoice(v); }} style={{ width: "100%", background: "#1E293B", border: "1px solid #334155", borderRadius: 8, padding: 7, color: "#CBD5E1", fontSize: 12, marginTop: 4, marginBottom: 10 }}>
+            {tts.voices.filter((v) => v.lang.startsWith("en")).map((v) => (<option key={v.name} value={v.name}>{v.name}</option>))}
+          </select>
+          <label style={{ color: "#64748B", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>Speed: {tts.rate.toFixed(1)}x</label>
+          <input type="range" min={0.5} max={1.5} step={0.05} value={tts.rate} onChange={(e) => tts.setRate(+e.target.value)} style={{ width: "100%" }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+const STYPES = { intro: { bg: "#3B82F620", fg: "#3B82F6", l: "INTRODUCTION" }, science: { bg: "#8B5CF620", fg: "#8B5CF6", l: "THE SCIENCE" }, insight: { bg: "#F59E0B20", fg: "#F59E0B", l: "KEY INSIGHT" }, method: { bg: "#10B98120", fg: "#10B981", l: "METHOD" }, exercise: { bg: "#06B6D420", fg: "#06B6D4", l: "EXERCISES" }, ceremony: { bg: "#DC262620", fg: "#DC2626", l: "CEREMONY" }, recap: { bg: "#6B728020", fg: "#94A3B8", l: "LOOKING BACK" } };
+
+const Section = ({ s, color, tts }) => {
+  const [open, setOpen] = useState(false);
+  const st = STYPES[s.type] || STYPES.insight;
+  return (
+    <div style={{ background: "#111827", borderRadius: 14, border: "1px solid #1E293B", overflow: "hidden", marginBottom: 14 }}>
+      <button onClick={() => setOpen(!open)} style={{ width: "100%", padding: "16px 18px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
+        <span style={{ padding: "3px 9px", background: st.bg, color: st.fg, borderRadius: 5, fontSize: 9, fontWeight: 700, letterSpacing: 1.5, flexShrink: 0 }}>{st.l}</span>
+        <span style={{ color: "#E2E8F0", fontSize: 15, flex: 1, fontFamily: PF }}>{s.t}</span>
+        <span style={{ color: "#475569", fontSize: 16 }}>{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 18px 18px" }}>
+          {tts.ok && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, padding: "9px 12px", background: color + "08", borderRadius: 9, border: "1px solid " + color + "12", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 16 }}>🔊</span>
+              {!tts.speaking ? (
+                <button onClick={() => tts.speak(s.body)} style={{ background: color + "20", border: "1px solid " + color + "40", color, borderRadius: 8, padding: "5px 14px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>▶ Listen</button>
+              ) : (
+                <>
+                  <button onClick={tts.paused ? tts.resume : tts.pause} style={{ background: color + "20", border: "1px solid " + color + "40", color, borderRadius: 8, padding: "5px 14px", fontSize: 12, cursor: "pointer" }}>{tts.paused ? "▶ Resume" : "⏸ Pause"}</button>
+                  <button onClick={tts.stop} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid #334155", color: "#94A3B8", borderRadius: 8, padding: "5px 14px", fontSize: 12, cursor: "pointer" }}>⏹ Stop</button>
+                </>
+              )}
+              {tts.speaking && <span style={{ marginLeft: "auto", color: "#475569", fontSize: 11 }}>{tts.prog}%</span>}
+            </div>
+          )}
+          <div style={{ color: "#94A3B8", fontSize: 15.5, lineHeight: 1.85, fontFamily: DF }}>
+            {s.body.split("\n\n").map((p, i) => (<p key={i} style={{ marginBottom: 16, color: i === 0 ? "#CBD5E1" : "#8B95A5" }}>{p}</p>))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const UrgeBtn = ({ tts }) => {
+  const [on, setOn] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [t, setT] = useState(90);
+  useEffect(() => { if (!on || t <= 0) return; const i = setInterval(() => setT((s) => s - 1), 1000); return () => clearInterval(i); }, [on, t]);
+  useEffect(() => { if (!on) return; const i = setInterval(() => setIdx((j) => (j + 1) % URGE.length), 10000); return () => clearInterval(i); }, [on]);
+
+  if (!on) return (
+    <button onClick={() => { setOn(true); setT(90); setIdx(0); }} style={{ position: "fixed", bottom: 20, right: 20, width: 56, height: 56, borderRadius: "50%", background: "linear-gradient(135deg,#DC2626,#991B1B)", border: "none", color: "#fff", cursor: "pointer", boxShadow: "0 4px 20px #DC262650", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+      <span style={{ fontSize: 18 }}>🆘</span>
+      <span style={{ fontSize: 8, fontWeight: 700 }}>URGE</span>
+    </button>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#06060Ce8", zIndex: 999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, overflow: "auto" }}>
+      <button onClick={() => { setOn(false); tts.stop(); }} style={{ position: "absolute", top: 14, right: 14, background: "none", border: "none", color: "#475569", fontSize: 26, cursor: "pointer" }}>✕</button>
+      <div style={{ position: "relative", width: 120, height: 120, marginBottom: 28 }}>
+        <svg width={120} height={120} style={{ position: "absolute", transform: "rotate(-90deg)" }}>
+          <circle cx={60} cy={60} r={56} fill="none" stroke="#1E293B" strokeWidth={3} />
+          <circle cx={60} cy={60} r={56} fill="none" stroke="#DC2626" strokeWidth={3} strokeDasharray={352} strokeDashoffset={352 * (1 - t / 90)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ color: "#F8FAFC", fontSize: 32, fontWeight: 200, fontFamily: "'DM Mono',monospace" }}>{t > 0 ? `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` : "✓"}</span>
+        </div>
+      </div>
+      <p style={{ color: "#CBD5E1", fontSize: 17, textAlign: "center", maxWidth: 480, lineHeight: 1.7, fontFamily: PF, fontStyle: "italic", marginBottom: 20 }}>{URGE[idx]}</p>
+      {tts.ok && !tts.speaking && <button onClick={() => tts.speak(URGE[idx])} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid #334155", color: "#94A3B8", padding: "7px 18px", borderRadius: 10, cursor: "pointer", fontSize: 12, marginBottom: 14 }}>🔊 Read aloud</button>}
+      {t <= 0 && (
+        <div style={{ textAlign: "center" }}>
+          <p style={{ color: "#059669", fontSize: 17, fontWeight: 600, marginBottom: 12 }}>The urge has passed. You stayed present. 💪</p>
+          <button onClick={() => { setOn(false); tts.stop(); }} style={{ padding: "11px 28px", background: "#059669", color: "#fff", border: "none", borderRadius: 12, fontSize: 15, cursor: "pointer", fontWeight: 600 }}>I am free</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Journal = ({ prompt, day }) => {
+  const [txt, setTxt] = useState("");
+  const [saved, setSaved] = useState(false);
+  return (
+    <div style={{ background: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", borderRadius: 14, padding: 20, border: "1px solid #FDE68A", marginTop: 16 }}>
+      <h4 style={{ color: "#92400E", fontSize: 12, textTransform: "uppercase", letterSpacing: 1.5, margin: "0 0 10px" }}>📝 Day {day} Journal</h4>
+      <p style={{ color: "#78350F", fontSize: 13, lineHeight: 1.7, marginBottom: 14, fontStyle: "italic" }}>{prompt}</p>
+      <textarea value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="Write here..." style={{ width: "100%", minHeight: 120, background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 10, padding: 14, fontSize: 14, lineHeight: 1.7, color: "#78350F", resize: "vertical", outline: "none", boxSizing: "border-box", fontFamily: DF }} />
+      <button onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2500); }} style={{ marginTop: 10, padding: "8px 20px", background: saved ? "#059669" : "#B45309", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, cursor: "pointer", fontWeight: 600 }}>{saved ? "✓ Saved" : "Save Entry"}</button>
+    </div>
+  );
+};
+
+/* ═══════════ MAIN APP ═══════════ */
+function QuitScroll() {
+  const [screen, setScreen] = useState("welcome");
+  const [curDay, setCurDay] = useState(0);
+  const [selDay, setSelDay] = useState(null);
+  const [done, setDone] = useState([]);
+  const [aStep, setAStep] = useState(0);
+  const tts = useTTS();
+
+  const AQs = [
+    { q: "How many hours per day do you spend on social media?", o: ["Under 1 hour", "1–2 hours", "2–4 hours", "4–6 hours", "6+ hours"] },
+    { q: "What is the first thing you do when you wake up?", o: ["Check social media", "Check messages", "Lie in bed", "Get up immediately"] },
+    { q: "How do you feel after a long scrolling session?", o: ["Relaxed", "Neutral", "Drained or numb", "Anxious or empty"] },
+    { q: "Have you tried reducing social media before?", o: ["Never", "Once, went back", "Multiple times", "Currently trying"] },
+    { q: "What is your primary goal?", o: ["Eliminate completely", "Drastically reduce", "Use intentionally", "Understand myself better"] },
+  ];
+
+  const mark = (d) => { if (!done.includes(d)) { setDone([...done, d]); setCurDay(Math.max(curDay, d)); } };
+
+  // Welcome
+  if (screen === "welcome") return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#06060C,#0F172A,#0A0A12)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, fontFamily: DF }}>
+      <link href={FONT} rel="stylesheet" />
+      <p style={{ color: "#475569", fontSize: 10, letterSpacing: 4, textTransform: "uppercase", marginBottom: 14 }}>A Multi-Method Liberation Program</p>
+      <h1 style={{ fontFamily: PF, fontSize: 50, color: "#F8FAFC", margin: 0, textAlign: "center" }}>QuitScroll</h1>
+      <p style={{ color: "#64748B", fontSize: 17, marginTop: 8 }}>Reclaim your life in 6 days</p>
+      <div style={{ width: 48, height: 1, background: "linear-gradient(90deg,transparent,#334155,transparent)", margin: "20px 0" }} />
+      <p style={{ color: "#475569", fontSize: 13, maxWidth: 420, textAlign: "center", lineHeight: 1.8 }}>Integrating CBT, ACT, DBT, Motivational Interviewing, Mindfulness, Behavioral Activation, Neuroscience & Habit Reversal — with voice narration.</p>
+      <button onClick={() => setScreen("assess")} style={{ marginTop: 32, padding: "15px 44px", background: "linear-gradient(135deg,#E8443A,#DC2626)", color: "#fff", border: "none", borderRadius: 14, fontSize: 17, fontWeight: 600, cursor: "pointer", boxShadow: "0 8px 32px #DC262640" }}>Begin Your Journey</button>
+      <div style={{ marginTop: 44, display: "flex", gap: 36 }}>
+        {[{ n: "6", l: "Days" }, { n: "8", l: "Methods" }, { n: "~90m", l: "Audio" }].map((s, i) => (
+          <div key={i} style={{ textAlign: "center" }}>
+            <div style={{ color: "#E2E8F0", fontSize: 20, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{s.n}</div>
+            <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5 }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // Assessment
+  if (screen === "assess") {
+    const q = AQs[aStep];
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#06060C,#0F172A)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, fontFamily: DF }}>
+        <link href={FONT} rel="stylesheet" />
+        <p style={{ color: "#E8443A", fontSize: 10, letterSpacing: 3, textTransform: "uppercase", marginBottom: 8 }}>Self-Assessment</p>
+        <div style={{ display: "flex", gap: 5, marginBottom: 32 }}>{AQs.map((_, i) => <div key={i} style={{ width: 32, height: 3, borderRadius: 2, background: i <= aStep ? "#E8443A" : "#1E293B" }} />)}</div>
+        <h2 style={{ fontFamily: PF, color: "#E2E8F0", fontSize: 22, textAlign: "center", maxWidth: 460, lineHeight: 1.4, marginBottom: 24 }}>{q.q}</h2>
+        <div style={{ display: "flex", flexDirection: "column", gap: 9, width: "100%", maxWidth: 380 }}>
+          {q.o.map((o, i) => (
+            <button key={i} onClick={() => { if (aStep < AQs.length - 1) setAStep(aStep + 1); else setScreen("program"); }} style={{ padding: "13px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid #1E293B", borderRadius: 11, color: "#CBD5E1", fontSize: 14, cursor: "pointer", textAlign: "left" }}>{o}</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Day Detail
+  if (screen === "day" && selDay !== null) {
+    const d = D[selDay];
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#06060C,#0F172A)", fontFamily: DF, paddingBottom: 90 }}>
+        <link href={FONT} rel="stylesheet" />
+        <div style={{ background: d.color + "10", padding: "18px 18px 24px", borderBottom: "1px solid " + d.color + "12" }}>
+          <button onClick={() => { setScreen("program"); setSelDay(null); tts.stop(); }} style={{ background: "none", border: "none", color: "#64748B", fontSize: 13, cursor: "pointer", marginBottom: 10 }}>← Back</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 34 }}>{d.icon}</span>
+            <div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3 }}>
+                <span style={{ color: d.color, fontSize: 10, letterSpacing: 2, textTransform: "uppercase" }}>Day {d.day}</span>
+                <span style={{ background: d.color + "12", color: d.color, padding: "2px 7px", borderRadius: 4, fontSize: 9 }}>{d.dur}</span>
+              </div>
+              <h1 style={{ fontFamily: PF, color: "#F8FAFC", fontSize: 24, margin: "2px 0" }}>{d.title}</h1>
+              <p style={{ color: "#64748B", fontSize: 12, margin: 0 }}>{d.sub}</p>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: 18, maxWidth: 620, margin: "0 auto" }}>
+          <VoicePanel tts={tts} />
+          {d.sections.map((s, i) => <Section key={i} s={s} color={d.color} tts={tts} />)}
+          <div style={{ background: d.color + "08", borderRadius: 12, padding: 18, border: "1px solid " + d.color + "12" }}>
+            <p style={{ color: d.color, fontSize: 9, textTransform: "uppercase", letterSpacing: 2, margin: "0 0 6px" }}>💡 Key Takeaway</p>
+            <p style={{ color: "#CBD5E1", fontSize: 14, lineHeight: 1.7, margin: 0, fontFamily: PF, fontStyle: "italic" }}>{d.takeaway}</p>
+          </div>
+          <Journal prompt={d.journal} day={d.day} />
+          <button onClick={() => { mark(selDay + 1); setScreen("program"); setSelDay(null); tts.stop(); }} style={{ width: "100%", padding: 15, marginTop: 18, background: done.includes(selDay + 1) ? "#059669" : "linear-gradient(135deg," + d.color + "," + d.color + "CC)", color: "#fff", border: "none", borderRadius: 14, fontSize: 16, fontWeight: 600, cursor: "pointer" }}>{done.includes(selDay + 1) ? "✓ Completed" : "Mark Day Complete"}</button>
+        </div>
+        <UrgeBtn tts={tts} />
+      </div>
+    );
+  }
+
+  // Program Dashboard
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#06060C,#0F172A)", fontFamily: DF, paddingBottom: 90 }}>
+      <link href={FONT} rel="stylesheet" />
+      <div style={{ padding: "22px 18px 14px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h1 style={{ fontFamily: PF, color: "#F8FAFC", fontSize: 24, margin: 0 }}>🌅 QuitScroll</h1>
+          <span style={{ background: "#E8443A12", color: "#E8443A", padding: "4px 10px", borderRadius: 7, fontSize: 10, fontWeight: 600 }}>Day {Math.min(curDay + 1, 6)}/6</span>
+        </div>
+        <p style={{ color: "#475569", fontSize: 12, margin: "4px 0 0" }}>8 methods • voice narration • deep therapeutic content</p>
+      </div>
+      <div style={{ padding: "0 18px", maxWidth: 620, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 18 }}>
+          {[{ l: "Days Done", v: done.length, i: "📅", c: "#3B82F6" }, { l: "Hrs Saved", v: (done.length * 2.5).toFixed(0), i: "⏰", c: "#059669" }, { l: "Methods", v: Math.min(done.length * 2, 8), i: "🧠", c: "#8B5CF6" }, { l: "Urges Surfed", v: Math.floor(done.length * 3.5), i: "🌊", c: "#F59E0B" }].map((s, i) => (
+            <div key={i} style={{ background: s.c + "06", border: "1px solid " + s.c + "12", borderRadius: 11, padding: 12, textAlign: "center" }}>
+              <div style={{ fontSize: 20 }}>{s.i}</div>
+              <div style={{ color: s.c, fontSize: 24, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{s.v}</div>
+              <div style={{ color: "#64748B", fontSize: 9, textTransform: "uppercase", letterSpacing: 1 }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 14, padding: 18, marginBottom: 18, border: "1px solid #1E293B", textAlign: "center" }}>
+          <p style={{ color: "#94A3B8", fontSize: 15, lineHeight: 1.6, fontFamily: PF, fontStyle: "italic", margin: 0 }}>"Between stimulus and response there is a space. In that space is our freedom."</p>
+          <p style={{ color: "#475569", fontSize: 11, marginTop: 8 }}>— Viktor Frankl</p>
+        </div>
+        <h3 style={{ color: "#64748B", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>Your 6-Day Program</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {D.map((d, i) => {
+            const dn = done.includes(d.day);
+            const lk = i > curDay;
+            const cu = i === curDay;
+            return (
+              <button key={i} onClick={() => { if (!lk) { setSelDay(i); setScreen("day"); } }} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", background: dn ? d.color + "06" : cu ? d.color + "04" : "rgba(255,255,255,0.02)", border: "1px solid " + (dn ? d.color + "25" : cu ? d.color + "15" : "#1E293B"), borderRadius: 14, cursor: lk ? "not-allowed" : "pointer", opacity: lk ? 0.35 : 1, textAlign: "left", width: "100%" }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: dn ? d.color : d.color + "12", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {dn ? <span style={{ color: "#fff", fontSize: 18 }}>✓</span> : lk ? <span style={{ fontSize: 14 }}>🔒</span> : <span style={{ fontSize: 18 }}>{d.icon}</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ color: d.color, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase" }}>Day {d.day}</span>
+                    {cu && !dn && <span style={{ color: "#F59E0B", fontSize: 9, fontWeight: 700 }}>• TODAY</span>}
+                  </div>
+                  <h3 style={{ color: "#E2E8F0", fontSize: 15, margin: "3px 0 2px", fontFamily: PF }}>{d.title}</h3>
+                  <p style={{ color: "#475569", fontSize: 11, margin: 0 }}>{d.method}</p>
+                  <p style={{ color: "#334155", fontSize: 10, margin: "2px 0 0" }}>{d.dur} • {d.sections.length} sections</p>
+                </div>
+                <span style={{ color: "#334155", fontSize: 18 }}>›</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <UrgeBtn tts={tts} />
+    </div>
+  );
+}
+
+
+    // Mount the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(QuitScroll));
+  </script>
+
+  <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => console.log('SW registered:', reg.scope))
+          .catch((err) => console.log('SW failed:', err));
+      });
+    }
+
+    // PWA Install prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // Could show a custom install button here
+      console.log('PWA install available');
+    });
+  </script>
+</body>
+</html>
